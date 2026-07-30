@@ -1,3 +1,6 @@
+# Documentation (Local only - ignored on GitHub)
+CODEBASE_DOCUMENTATION.md
+
 # Dependencies
 node_modules/
 **/node_modules/
