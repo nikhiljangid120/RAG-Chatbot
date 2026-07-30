@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rag_postgres
+    environment:
+      POSTGRES_USER: rag_user
+      POSTGRES_PASSWORD: rag_password
+      POSTGRES_DB: rag_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # This maps the internal database data to a persistent Docker volume
+      - rag_db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  # This declares the volume so our data survives container restarts
+  rag_db_data:
