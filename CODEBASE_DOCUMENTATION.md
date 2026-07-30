@@ -261,7 +261,60 @@ sequenceDiagram
 
 ---
 
-## 8. Environment Setup & Configuration
+## 8. Authentication & Authorization (A&A)
+
+### 8.1 Current Security Model
+- **API Access**: In the current development implementation, backend REST endpoints (`/documents`, `/qa/ask`) are unauthenticated to allow quick local prototyping.
+- **Third-Party Service Credentials**: Outbound integration with OpenRouter API is authenticated using server-side Bearer Tokens (`OPENROUTER_API_KEY`) isolated inside system environment variables (`.env`), ensuring no client-side API key leakage.
+
+### 8.2 Production Authentication & Authorization (A&A) Specification
+For enterprise deployment, the following A&A framework should be enabled:
+
+```mermaid
+graph TD
+    Client[React App / API Client] -->|JWT Bearer Token| Guard[NestJS AuthGuard / JwtStrategy]
+    Guard -->|Verify Claims & Signature| Keycloak[Auth0 / Keycloak / Identity Provider]
+    Guard -->|Authorized User| RBAC[RolesGuard @Roles]
+    RBAC -->|ADMIN Role| Upload[POST /documents/upload & Delete]
+    RBAC -->|USER / ADMIN Role| QA[POST /qa/ask Query Engine]
+    QA -->|Tenant Isolation| DB[(PostgreSQL pgvector - Row Level Security)]
+```
+
+1. **Authentication (AuthN)**:
+   - Integration with `@nestjs/passport` and `passport-jwt`.
+   - Bearer token authentication header (`Authorization: Bearer <token>`) required on all REST endpoints.
+   - Identity provider integration via OAuth2 / OIDC (Auth0, Keycloak, or Firebase Auth).
+2. **Authorization (AuthZ) & Access Control**:
+   - **Role-Based Access Control (RBAC)**:
+     - `@Roles('ADMIN')`: Granted access to upload documents, clear vector indexes, and manage document lifecycles.
+     - `@Roles('USER')`: Granted read-only permission to query vector store via `/qa/ask`.
+   - **Multi-Tenant Data Isolation (Row-Level Security)**:
+     - Addition of `tenantId` / `userId` columns to `DocumentEntity` and `ChunkEntity`.
+     - Retrieval query filtering: `WHERE c.tenantId = :tenantId` to strictly restrict similarity search results to documents owned by the calling tenant.
+3. **API Rate Limiting & Denial of Service Protection**:
+   - Implemented via `@nestjs/throttler` to prevent abuse of computationally expensive vector searches and third-party LLM token consumption.
+
+---
+
+## 9. Architectural Assumptions & Analysis (A&A)
+
+### 9.1 Technical Assumptions
+1. **Document Format & Digital Text Integrity**: Assumes uploaded PDF files contain digital selectable text rather than pure scanned images (OCR processing is not active in the base ingestion pipeline).
+2. **Vector Space Uniformity**: Assumes all document chunk vectors and user query vectors are embedded using the exact same transformer model (`Xenova/all-MiniLM-L6-v2`) to ensure valid vector space comparison.
+3. **Database Extension Availability**: Assumes PostgreSQL instance has the `pgvector` extension installed (`CREATE EXTENSION IF NOT EXISTS vector;`).
+
+### 9.2 Critical Engineering Analysis
+
+| Component | Design Choice | Tradeoff / Analysis | Mitigation / Recommendation |
+| :--- | :--- | :--- | :--- |
+| **Embeddings** | Local `all-MiniLM-L6-v2` (384-dim) | Zero API cost & zero network latency for vector generation, but smaller model capacity compared to OpenAI `text-embedding-3-large`. | Upgrade to 1536-dim embeddings if hyper-dense domain terminology is required. |
+| **Vector Indexing** | Exact Cosine Similarity (`<=>` operator) | 100% search accuracy for small to medium document collections (< 100,000 chunks). | Add `HNSW` or `IVFFlat` indexes in `pgvector` when chunk count exceeds 500,000. |
+| **Chunking Window** | 500 Chars / 100 Overlap | Retains sentence-level granularity; fits nicely into LLM prompt context window. | Works well for general narrative text; structured table parsing requires specialized Markdown splitters. |
+| **LLM Selection** | Llama 3.3 70B via OpenRouter | High accuracy, state-of-the-art reasoning, cost-effective API pricing via OpenRouter. | Low temperature (`0.1`) ensures deterministic factual responses with minimal hallucination risk. |
+
+---
+
+## 10. Environment Setup & Configuration
 
 ### Required Environment Variables (`document-rag/.env`)
 ```env
