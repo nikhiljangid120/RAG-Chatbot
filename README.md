@@ -1,5 +1,4 @@
 # RAG Chatbot
-
 A Retrieval-Augmented Generation (RAG) Chatbot system consisting of a NestJS backend and a React/Vite frontend.
 
 ## Project Structure
