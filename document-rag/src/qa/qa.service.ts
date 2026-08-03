@@ -12,7 +12,6 @@ import { PromptBuilderService } from './prompt-builder.service';
 
 // The OpenRouter model identifier for Llama 3.3 70B
 const OPENROUTER_MODEL = 'meta-llama/llama-3.3-70b-instruct';
-
 // OpenRouter API endpoint — OpenAI-compatible
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
