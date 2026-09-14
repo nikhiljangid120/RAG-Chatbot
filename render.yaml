@@ -1,0 +1,26 @@
+databases:
+  - name: rag-chatbot-db
+    databaseName: rag_chatbot
+    user: rag_user
+    plan: free
+
+services:
+  - type: web
+    name: nikhil-rag-chatbot
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_SSL
+        value: "true"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rag-chatbot-db
+          property: connectionString
+      - key: OPENROUTER_API_KEY
+        sync: false

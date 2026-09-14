@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import axios from 'axios';
-import { UploadCloud, FileType, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+import { UploadCloud, CheckCircle, AlertCircle, Loader } from 'lucide-react';
+
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '');
 
 interface DocumentUploadProps {
   onUploadComplete: () => void;
@@ -27,8 +29,8 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
     formData.append('file', file);
 
     try {
-      const response = await axios.post('http://localhost:3000/documents/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
+      const response = await axios.post(`${API_BASE_URL}/documents/upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       setSuccess(`Uploaded ${response.data.filename} successfully (${response.data.chunksCreated} chunks)`);
       onUploadComplete();
@@ -44,35 +46,29 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
     setIsDragging(true);
   };
 
-  const onDragLeave = () => setIsDragging(false);
-
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0]);
-    }
+    if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
   };
 
   return (
     <div className="glass-panel" style={{ padding: '24px' }}>
       <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>Upload Document</h3>
-      
-      <div 
+      <div
         className={`upload-zone ${isDragging ? 'drag-active' : ''}`}
         onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
+        onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
         onClick={() => fileInputRef.current?.click()}
       >
-        <input 
-          type="file" 
-          ref={fileInputRef} 
-          style={{ display: 'none' }} 
+        <input
+          type="file"
+          ref={fileInputRef}
+          style={{ display: 'none' }}
           accept="application/pdf"
-          onChange={(e) => e.target.files && handleFile(e.target.files[0])}
+          onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
         />
-        
         {isUploading ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
             <Loader className="upload-icon animate-spin" size={40} />
@@ -86,18 +82,14 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
           </>
         )}
       </div>
-
       {error && (
         <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(239,68,68,0.1)', color: 'var(--danger)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
-          <AlertCircle size={18} />
-          {error}
+          <AlertCircle size={18} />{error}
         </div>
       )}
-
       {success && (
         <div style={{ marginTop: '16px', padding: '12px', background: 'rgba(16,185,129,0.1)', color: 'var(--success)', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem' }}>
-          <CheckCircle size={18} />
-          {success}
+          <CheckCircle size={18} />{success}
         </div>
       )}
     </div>

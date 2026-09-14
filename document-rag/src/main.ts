@@ -1,17 +1,24 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
 
-  // Enable CORS for local frontend development
-  app.enableCors();
+  // Serve the production frontend and keep all API routes under /api.
+  app.setGlobalPrefix('api');
+  app.useStaticAssets(join(__dirname, '..', 'public'));
 
-  // GlobalValidationPipe activates class-validator decorators on all DTOs.
-  // whitelist: true strips any extra fields the client sends that aren't in the DTO.
-  // forbidNonWhitelisted: true throws a 400 if unexpected fields are sent.
+  const corsOrigin = process.env.CORS_ORIGIN;
+  app.enableCors(
+    corsOrigin
+      ? { origin: corsOrigin.split(',').map((origin) => origin.trim()) }
+      : undefined,
+  );
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -21,8 +28,7 @@ async function bootstrap() {
   );
 
   const port = process.env.PORT ?? 3000;
-  await app.listen(port);
-  logger.log(`Application running on: http://localhost:${port}`);
+  await app.listen(port, '0.0.0.0');
+  logger.log(`Application running on port ${port}`);
 }
 bootstrap();
-

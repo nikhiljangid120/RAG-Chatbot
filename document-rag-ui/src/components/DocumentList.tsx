@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { FileText, Loader } from 'lucide-react';
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '');
+
 interface Document {
   id: string;
   filename: string;
@@ -20,7 +22,7 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
   useEffect(() => {
     const fetchDocuments = async () => {
       try {
-        const response = await axios.get('http://localhost:3000/documents');
+        const response = await axios.get(`${API_BASE_URL}/documents`);
         setDocuments(response.data.documents);
       } catch (error) {
         console.error('Failed to fetch documents', error);
@@ -28,7 +30,6 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
         setLoading(false);
       }
     };
-    
     fetchDocuments();
   }, [refreshTrigger]);
 
@@ -43,11 +44,8 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
   return (
     <div className="glass-panel" style={{ flex: 1, padding: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>Library</h3>
-      
       {documents.length === 0 ? (
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', marginTop: '24px' }}>
-          No documents uploaded yet.
-        </p>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', marginTop: '24px' }}>No documents uploaded yet.</p>
       ) : (
         <div className="doc-list">
           {documents.map((doc) => (
@@ -57,9 +55,7 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
                 <div className="doc-name" title={doc.filename}>{doc.filename}</div>
                 <div className="doc-meta">
                   <span>{new Date(doc.createdAt).toLocaleDateString()}</span>
-                  <span className={`status-badge status-${doc.status.toLowerCase()}`}>
-                    {doc.status}
-                  </span>
+                  <span className={`status-badge status-${doc.status.toLowerCase()}`}>{doc.status}</span>
                 </div>
               </div>
             </div>
