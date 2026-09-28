@@ -1,29 +1,16 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
-import {ChunkEntity} from './chunk.entity';
+import { Column, CreateDateColumn, Entity, Index, OneToMany, PrimaryGeneratedColumn, UpdateDateColumn } from 'typeorm';
+import { ChunkEntity } from './chunk.entity';
 
 @Entity('documents')
+@Index(['ownerId', 'hash'], { unique: true })
 export class DocumentEntity {
-  @PrimaryGeneratedColumn('uuid')
-  id: string;
-
-  @Column()
-  filename: string;
-
-  // We use a hash to prevent uploading the exact same file multiple times
-  @Column({ unique: true })
-  hash: string;
-
-  // Tracks the background AI processing status (PENDING, PROCESSING, COMPLETED, FAILED)
-  @Column({ default: 'PENDING' })
-  status: string;
-
-  @CreateDateColumn()
-  createdAt: Date;
-
-  @UpdateDateColumn()
-  updatedAt: Date;
-
-  // One Document has Many Chunks.
-  @OneToMany(() => ChunkEntity, (chunk) => chunk.document)
-  chunks: ChunkEntity[];
+  @PrimaryGeneratedColumn('uuid') id: string;
+  @Column() filename: string;
+  @Column() hash: string;
+  @Column({ type: 'uuid', nullable: true }) ownerId: string | null;
+  @Column({ default: 'PENDING' }) status: string;
+  @Column({ type: 'int', default: 0 }) pageCount: number;
+  @CreateDateColumn() createdAt: Date;
+  @UpdateDateColumn() updatedAt: Date;
+  @OneToMany(() => ChunkEntity, (chunk) => chunk.document) chunks: ChunkEntity[];
 }

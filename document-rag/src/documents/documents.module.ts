@@ -6,14 +6,10 @@ import { ChunkingService } from './chunking.service';
 import { DocumentEntity } from './document.entity';
 import { ChunkEntity } from './chunk.entity';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([DocumentEntity, ChunkEntity]),
-    // Import EmbeddingsModule so EmbeddingsService can be injected
-    // into DocumentsService via NestJS dependency injection.
-    EmbeddingsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([DocumentEntity, ChunkEntity]), EmbeddingsModule, AuthModule],
   controllers: [DocumentsController],
   providers: [DocumentsService, ChunkingService],
   exports: [DocumentsService],

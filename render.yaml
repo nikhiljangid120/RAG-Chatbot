@@ -22,5 +22,7 @@ services:
         fromDatabase:
           name: rag-chatbot-db
           property: connectionString
+      - key: AUTH_SECRET
+        generateValue: true
       - key: OPENROUTER_API_KEY
         sync: false
