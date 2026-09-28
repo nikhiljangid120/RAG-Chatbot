@@ -8,17 +8,15 @@ import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { RetrievalModule } from './retrieval/retrieval.module';
 import { QaModule } from './qa/qa.module';
 import { AuthModule } from './auth/auth.module';
+import { ChatsModule } from './chats/chats.module';
 import { getDatabaseConfig } from './config/database.config';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    TypeOrmModule.forRootAsync({
-      imports: [ConfigModule],
-      inject: [ConfigService],
-      useFactory: (configService: ConfigService) => getDatabaseConfig(configService),
-    }),
+    TypeOrmModule.forRootAsync({ imports: [ConfigModule], inject: [ConfigService], useFactory: getDatabaseConfig }),
     AuthModule,
+    ChatsModule,
     DocumentsModule,
     EmbeddingsModule,
     RetrievalModule,

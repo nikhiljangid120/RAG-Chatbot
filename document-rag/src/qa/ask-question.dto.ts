@@ -10,4 +10,8 @@ export class AskQuestionDto {
   @IsArray()
   @IsUUID('4', { each: true })
   documentIds?: string[];
+
+  @IsOptional()
+  @IsUUID('4')
+  sessionId?: string;
 }
