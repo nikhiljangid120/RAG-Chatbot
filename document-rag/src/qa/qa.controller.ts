@@ -1,24 +1,18 @@
-import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { QaService } from './qa.service';
 import { AskQuestionDto } from './ask-question.dto';
+import { AuthGuard } from '../auth/auth.guard';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthUser } from '../auth/auth.service';
 
-/**
- * QaController
- *
- * Exposes the POST /qa/ask endpoint.
- * Thin controller — delegates everything to QaService.
- */
 @Controller('qa')
+@UseGuards(AuthGuard)
 export class QaController {
   constructor(private readonly qaService: QaService) {}
 
-  /**
-   * POST /qa/ask
-   * Body: { "question": "What is the leave policy?" }
-   */
   @Post('ask')
   @HttpCode(HttpStatus.OK)
-  async askQuestion(@Body() askQuestionDto: AskQuestionDto) {
-    return this.qaService.askQuestion(askQuestionDto.question);
+  askQuestion(@CurrentUser() user: AuthUser, @Body() body: AskQuestionDto) {
+    return this.qaService.askQuestion(body.question, user.id, body.documentIds ?? []);
   }
 }
