@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bot, Layers, Send, User } from 'lucide-react';
-import { api } from '../api';
+import { api, API_BASE_URL, getToken } from '../api';
 
 interface Source { documentId: string; filename: string; pageNumber: number | null; excerpt: string; similarityScore: number }
 interface Message { id: string; role: 'user' | 'assistant'; content: string; sources?: Source[] }
@@ -28,14 +28,39 @@ export function ChatInterface({ documentIds, sessionId, onSessionCreated, onSess
       activeSessionId = created.data.id;
       onSessionCreated(activeSessionId!);
     }
-    setMessages((current) => [...current.filter((message) => message.id !== 'welcome'), { id: `${Date.now()}-user`, role: 'user', content: question }]);
+    const assistantId = `${Date.now()}-assistant`;
+    setMessages((current) => [...current.filter((message) => message.id !== 'welcome'), { id: `${Date.now()}-user`, role: 'user', content: question }, { id: assistantId, role: 'assistant', content: '' }]);
     setInput(''); setLoading(true);
+
     try {
-      const response = await api.post('/qa/ask', { question, documentIds, sessionId: activeSessionId });
-      setMessages((current) => [...current, { id: `${Date.now()}-assistant`, role: 'assistant', content: response.data.answer, sources: response.data.sources }]);
+      const response = await fetch(`${API_BASE_URL}/qa/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` },
+        body: JSON.stringify({ question, documentIds, sessionId: activeSessionId }),
+      });
+      if (!response.ok || !response.body) throw new Error('Unable to start the response stream.');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() ?? '';
+        for (const event of events) {
+          const line = event.split('\n').find((item) => item.startsWith('data: '));
+          if (!line) continue;
+          const data = JSON.parse(line.slice(6));
+          if (data.type === 'token') setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, content: message.content + data.content } : message));
+          if (data.type === 'sources') setMessages((current) => current.map((message) => message.id === assistantId ? { ...message, sources: data.sources } : message));
+          if (data.type === 'error') throw new Error(data.message);
+        }
+      }
       onSessionUpdated();
-    } catch (error: any) {
-      setMessages((current) => [...current, { id: `${Date.now()}-error`, role: 'assistant', content: `Error: ${error.response?.data?.message ?? 'Unable to answer right now.'}` }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to answer right now.';
+      setMessages((current) => current.map((item) => item.id === assistantId ? { ...item, content: `Error: ${message}` } : item));
     } finally { setLoading(false); }
   }
 
@@ -43,8 +68,7 @@ export function ChatInterface({ documentIds, sessionId, onSessionCreated, onSess
     <div className="chat-container">
       <div className="chat-header"><div><h2 className="chat-title">RAG Assistant</h2><p className="chat-subtitle">{documentIds.length ? `Searching ${documentIds.length} selected document${documentIds.length === 1 ? '' : 's'}` : 'Searching your entire private library'}</p></div></div>
       <div className="chat-messages">
-        {messages.map((message) => <div key={message.id} className={`message ${message.role} animate-fade-in`}><div className={`avatar ${message.role}`}>{message.role === 'user' ? <User size={20} /> : <Bot size={20} />}</div><div className="message-content"><div className="message-bubble">{message.content}</div>{!!message.sources?.length && <div className="sources-container">{message.sources.map((source, index) => <details key={`${source.documentId}-${index}`} className="source-tag"><summary><Layers size={12} /> {source.filename}{source.pageNumber ? ` · page ${source.pageNumber}` : ''} · {source.similarityScore}%</summary><p style={{ marginTop: 8 }}>{source.excerpt}</p></details>)}</div>}</div></div>)}
-        {loading && <div className="message assistant"><div className="avatar assistant"><Bot size={20} /></div><div className="typing-indicator"><div className="dot" /><div className="dot" /><div className="dot" /></div></div>}
+        {messages.map((message) => <div key={message.id} className={`message ${message.role} animate-fade-in`}><div className={`avatar ${message.role}`}>{message.role === 'user' ? <User size={20} /> : <Bot size={20} />}</div><div className="message-content"><div className="message-bubble">{message.content || '…'}</div>{!!message.sources?.length && <div className="sources-container">{message.sources.map((source, index) => <details key={`${source.documentId}-${index}`} className="source-tag"><summary><Layers size={12} /> {source.filename}{source.pageNumber ? ` · page ${source.pageNumber}` : ''} · {source.similarityScore}%</summary><p style={{ marginTop: 8 }}>{source.excerpt}</p></details>)}</div>}</div></div>)}
         <div ref={end} />
       </div>
       <div className="chat-input-area"><div className="input-wrapper"><input className="chat-input" placeholder="Ask a question…" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && send()} disabled={loading} /><button className="send-btn" onClick={send} disabled={loading || !input.trim()}><Send size={18} /></button></div></div>
