@@ -15,10 +15,10 @@ function App() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const loadConversations = useCallback(async () => {
+  const loadConversations = useCallback(async (preferredId?: string) => {
     const response = await api.get('/chats');
     setConversations(response.data);
-    setSessionId((current) => current ?? response.data[0]?.id ?? null);
+    setSessionId((current) => preferredId ?? (response.data.some((item: Conversation) => item.id === current) ? current : response.data[0]?.id ?? null));
   }, []);
 
   useEffect(() => {
@@ -28,15 +28,14 @@ function App() {
 
   async function createConversation() {
     const response = await api.post('/chats');
-    setSessionId(response.data.id);
-    await loadConversations();
-    setSessionId(response.data.id);
+    await loadConversations(response.data.id);
   }
 
   async function deleteConversation(id: string) {
     await api.delete(`/chats/${id}`);
-    if (sessionId === id) setSessionId(null);
-    await loadConversations();
+    const response = await api.get('/chats');
+    setConversations(response.data);
+    setSessionId(response.data[0]?.id ?? null);
   }
 
   if (checking) return <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>Loading…</div>;
@@ -48,13 +47,13 @@ function App() {
         <div className="brand-header">
           <div className="brand-logo"><Database size={24} /></div>
           <div><h1 className="brand-text">Doc RAG</h1><small style={{ color: 'var(--text-secondary)' }}>{email}</small></div>
-          <button title="Sign out" onClick={() => { clearToken(); setEmail(null); }} style={{ marginLeft: 'auto', background: 'transparent', border: 0, color: 'var(--text-secondary)', cursor: 'pointer' }}><LogOut size={18} /></button>
+          <button title="Sign out" onClick={() => { clearToken(); setEmail(null); setConversations([]); setSessionId(null); }} style={{ marginLeft: 'auto', background: 'transparent', border: 0, color: 'var(--text-secondary)', cursor: 'pointer' }}><LogOut size={18} /></button>
         </div>
         <ConversationList conversations={conversations} selectedId={sessionId} onSelect={setSessionId} onCreate={createConversation} onDelete={deleteConversation} />
         <DocumentUpload onUploadComplete={() => setRefreshDocs((value) => value + 1)} />
         <DocumentList refreshTrigger={refreshDocs} selectedIds={selectedDocumentIds} onSelectionChange={setSelectedDocumentIds} onDeleted={() => setRefreshDocs((value) => value + 1)} />
       </div>
-      <div className="main-content"><ChatInterface documentIds={selectedDocumentIds} sessionId={sessionId} onSessionCreated={setSessionId} onSessionUpdated={loadConversations} /></div>
+      <div className="main-content"><ChatInterface documentIds={selectedDocumentIds} sessionId={sessionId} onSessionCreated={(id) => loadConversations(id)} onSessionUpdated={() => loadConversations()} /></div>
     </div>
   );
 }
