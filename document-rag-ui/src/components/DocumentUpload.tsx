@@ -15,8 +15,15 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
+    if (isUploading) return;
+    setError(null);
+    setSuccess(null);
     if (file.type !== 'application/pdf') {
       setError('Please upload a PDF file.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError('Please upload a PDF smaller than 10 MB.');
       return;
     }
 
@@ -31,6 +38,11 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
       const response = await axios.post(`${API_BASE_URL}/documents/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
+      if (!response.data.success) {
+        setError(response.data.message || 'The PDF could not be processed.');
+        onUploadComplete();
+        return;
+      }
       setSuccess(`Uploaded ${response.data.filename} successfully (${response.data.chunksCreated} chunks)`);
       onUploadComplete();
     } catch (err: unknown) {
@@ -41,6 +53,7 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
       }
     } finally {
       setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -63,13 +76,14 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
         onDragOver={onDragOver}
         onDragLeave={() => setIsDragging(false)}
         onDrop={onDrop}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => !isUploading && fileInputRef.current?.click()}
       >
         <input
           type="file"
           ref={fileInputRef}
           style={{ display: 'none' }}
           accept="application/pdf"
+          disabled={isUploading}
           onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
         />
         {isUploading ? (
@@ -81,7 +95,7 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
           <>
             <UploadCloud className="upload-icon" size={48} />
             <p style={{ color: 'var(--text-secondary)' }}>Drag & drop your PDF here</p>
-            <p style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.3)', marginTop: '8px' }}>or click to browse</p>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '8px' }}>or click to browse · PDF up to 10 MB</p>
           </>
         )}
       </div>

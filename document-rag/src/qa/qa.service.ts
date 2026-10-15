@@ -14,6 +14,14 @@ import {
 } from '../retrieval/retrieval.service';
 import { PromptBuilderService } from './prompt-builder.service';
 import { SearchMode } from './ask-question.dto';
+import { Readable } from 'node:stream';
+import { readOpenRouterTokens } from './openrouter-stream';
+import { getOpenRouterError } from './openrouter-error';
+
+interface CompletionResponse {
+  error?: { message?: string };
+  choices?: Array<{ message?: { content?: string } }>;
+}
 
 // The OpenRouter model identifier for Llama 3.3 70B
 const OPENROUTER_MODEL = 'meta-llama/llama-3.3-70b-instruct';
@@ -239,7 +247,7 @@ export class QaService {
     let answer: string;
 
     try {
-      const response = await axios.post(
+      const response = await axios.post<CompletionResponse>(
         OPENROUTER_API_URL,
         {
           model: OPENROUTER_MODEL,
@@ -262,17 +270,23 @@ export class QaService {
         },
       );
 
-      answer = response.data.choices[0]?.message?.content;
+      if (response.data.error) {
+        throw new Error(
+          response.data.error.message ||
+            'The model provider could not complete the answer.',
+        );
+      }
+      const content = response.data.choices?.[0]?.message?.content;
 
-      if (!answer) {
+      if (!content) {
         throw new Error('OpenRouter returned an empty response.');
       }
+      answer = content;
     } catch (error) {
-      this.logger.error(
-        `OpenRouter call failed: ${error?.response?.data?.error?.message ?? error.message}`,
-      );
+      const message = await getOpenRouterError(error);
+      this.logger.error(`OpenRouter call failed: ${message}`);
       throw new InternalServerErrorException(
-        `Failed to get answer from LLM: ${error?.response?.data?.error?.message ?? error.message}`,
+        `Failed to get answer from LLM: ${message}`,
       );
     }
 
@@ -360,10 +374,16 @@ export class QaService {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
+    res.status(200);
     res.flushHeaders(); // flush headers immediately
+
+    const abortController = new AbortController();
+    const onClose = () => abortController.abort();
+    res.on('close', onClose);
 
     // Helper: write a single SSE event to the response
     const emit = (payload: object | string) => {
+      if (res.destroyed || res.writableEnded) return;
       const data =
         typeof payload === 'string' ? payload : JSON.stringify(payload);
       res.write(`data: ${data}\n\n`);
@@ -409,7 +429,6 @@ export class QaService {
           emit({ type: 'token', token: word + ' ' });
         }
         emit('[DONE]');
-        res.end();
         return;
       }
 
@@ -448,7 +467,7 @@ export class QaService {
       //
       // We use axios with responseType:'stream' to get a Node.js Readable stream
       // from the HTTP response, then process it line-by-line.
-      const streamResponse = await axios.post(
+      const streamResponse = await axios.post<Readable>(
         OPENROUTER_API_URL,
         {
           model: OPENROUTER_MODEL,
@@ -469,85 +488,35 @@ export class QaService {
           },
           responseType: 'stream', // ← Axios returns a Node.js Readable
           timeout: 60000, // longer timeout for streaming
+          signal: abortController.signal,
         },
       );
 
       // ─── STEP 6: PARSE SSE STREAM AND FORWARD TOKENS ──────────────────────
       // OpenRouter sends raw SSE lines. We accumulate incomplete lines
       // across chunks using a buffer, then parse each complete line.
-      let buffer = '';
-
-      await new Promise<void>((resolve, reject) => {
-        streamResponse.data.on('data', (chunk: Buffer) => {
-          // Append raw bytes to our line buffer
-          buffer += chunk.toString('utf8');
-
-          // Split on newlines — SSE events are separated by \n\n
-          const lines = buffer.split('\n');
-
-          // Keep the last (possibly incomplete) line in the buffer
-          buffer = lines.pop() ?? '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-
-            // Skip empty lines and SSE comment lines
-            if (!trimmed || trimmed.startsWith(':')) continue;
-
-            // Each SSE data line starts with "data: "
-            if (!trimmed.startsWith('data: ')) continue;
-
-            const payload = trimmed.slice(6); // strip "data: " prefix
-
-            // [DONE] is the end-of-stream sentinel (OpenAI SSE convention)
-            if (payload === '[DONE]') {
-              emit('[DONE]');
-              resolve();
-              return;
-            }
-
-            // Parse the JSON delta and extract the token text
-            try {
-              const parsed = JSON.parse(payload);
-              const token: string | undefined =
-                parsed?.choices?.[0]?.delta?.content;
-
-              // Only emit non-empty tokens (some deltas carry role info, not text)
-              if (token) {
-                emit({ type: 'token', token });
-              }
-            } catch {
-              // Malformed JSON line — skip silently (can happen at stream boundaries)
-            }
-          }
-        });
-
-        streamResponse.data.on('end', () => {
-          // Stream ended cleanly without a [DONE] sentinel (shouldn't happen, but guard)
-          emit('[DONE]');
-          resolve();
-        });
-
-        streamResponse.data.on('error', (err: Error) => {
-          this.logger.error(`[STREAM] OpenRouter stream error: ${err.message}`);
-          reject(err);
-        });
-      });
+      for await (const token of readOpenRouterTokens(streamResponse.data)) {
+        emit({ type: 'token', token });
+      }
+      emit('[DONE]');
 
       this.logger.log('[STREAM] Token stream complete.');
     } catch (error) {
+      if (abortController.signal.aborted) return;
       // Emit an error event so the UI can display it gracefully
-      this.logger.error(`[STREAM] Error: ${error?.message}`);
+      const message = await getOpenRouterError(error);
+      this.logger.error(`[STREAM] Error: ${message}`);
       try {
         emit({
           type: 'error',
-          message: error?.response?.data?.error?.message ?? error.message,
+          message,
         });
         emit('[DONE]');
       } catch {
         // Response may already be partially written — nothing more we can do
       }
     } finally {
+      res.off('close', onClose);
       res.end();
     }
   }

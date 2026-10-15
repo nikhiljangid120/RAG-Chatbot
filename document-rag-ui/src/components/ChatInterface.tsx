@@ -75,14 +75,16 @@ export function ChatInterface() {
       });
 
       if (!response.ok || !response.body) {
-        throw new Error(`Server error: ${response.status}`);
+        const detail = await response.json().catch(() => null);
+        throw new Error(detail?.message || `Server error: ${response.status}`);
       }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder('utf-8');
       let buffer = '';
+      let completed = false;
 
-      while (true) {
+      while (!completed) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -90,7 +92,7 @@ export function ChatInterface() {
         buffer += decoder.decode(value, { stream: true });
 
         // Split on double-newline (SSE event boundary)
-        const events = buffer.split('\n\n');
+        const events = buffer.split(/\r?\n\r?\n/);
 
         // Keep the last (potentially incomplete) event in the buffer
         buffer = events.pop() ?? '';
@@ -103,6 +105,7 @@ export function ChatInterface() {
 
           // End of stream
           if (payload === '[DONE]') {
+            completed = true;
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === assistantId ? { ...m, isStreaming: false } : m,
@@ -119,7 +122,10 @@ export function ChatInterface() {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId
-                    ? { ...m, sources: parsed.sources, searchMode: parsed.searchMode }
+                    ? { ...m, sources: parsed.sources.map((source: Source) => ({
+                        ...source,
+                        similarityScore: Number(source.similarityScore),
+                      })).filter((source: Source) => Number.isFinite(source.similarityScore)), searchMode: parsed.searchMode }
                     : m,
                 ),
               );
@@ -136,7 +142,7 @@ export function ChatInterface() {
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === assistantId
-                    ? { ...m, content: `Error: ${parsed.message}`, isStreaming: false }
+                    ? { ...m, content: m.content ? `${m.content}\n\nError: ${parsed.message}` : `Error: ${parsed.message}`, isStreaming: false }
                     : m,
                 ),
               );
@@ -146,30 +152,20 @@ export function ChatInterface() {
           }
         }
       }
+      reader.releaseLock();
+      if (!completed) throw new Error('The connection ended before the answer was complete. Please try again.');
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : 'Failed to connect to the server.';
       // Replace the streaming placeholder with an error message
       setMessages((prev) =>
-        prev
-          .map((m) =>
+        prev.map((m) =>
             m.id === assistantId
               ? {
                   ...m,
-                  content: `Error: ${msg}`,
+                  content: m.content ? `${m.content}\n\nError: ${msg}` : `Error: ${msg}`,
                   isStreaming: false,
                 }
               : m,
-          )
-          .concat(
-            prev.find((m) => m.role === 'assistant' && m.isStreaming)
-              ? []
-              : [
-                  {
-                    id: (Date.now() + 2).toString(),
-                    role: 'assistant' as const,
-                    content: `Error: ${msg}`,
-                  },
-                ],
           ),
       );
     } finally {
@@ -218,7 +214,7 @@ export function ChatInterface() {
                     <div
                       key={idx}
                       className="source-tag"
-                      title={`Relevance: ${source.similarityScore.toFixed(2)}%`}
+                      title={`Cosine similarity: ${source.similarityScore.toFixed(2)}%`}
                     >
                       <Layers size={12} />
                       {source.filename} · Chunk {source.chunkIndex}

@@ -18,20 +18,25 @@ interface DocumentListProps {
 export function DocumentList({ refreshTrigger }: DocumentListProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
     const fetchDocuments = async () => {
+      setLoading(true);
+      setError(null);
       try {
         const response = await axios.get(`${API_BASE_URL}/documents`);
         setDocuments(response.data.documents);
       } catch (error) {
         console.error('Failed to fetch documents', error);
+        setError('Could not load the document library. Please try again.');
       } finally {
         setLoading(false);
       }
     };
     fetchDocuments();
-  }, [refreshTrigger]);
+  }, [refreshTrigger, retry]);
 
   if (loading) {
     return (
@@ -42,9 +47,14 @@ export function DocumentList({ refreshTrigger }: DocumentListProps) {
   }
 
   return (
-    <div className="glass-panel" style={{ flex: 1, padding: '24px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className="glass-panel" style={{ flex: '1 0 auto', minHeight: '180px', padding: '24px', display: 'flex', flexDirection: 'column' }}>
       <h3 style={{ marginBottom: '16px', fontSize: '1.1rem' }}>Library</h3>
-      {documents.length === 0 ? (
+      {error ? (
+        <div role="alert">
+          <p>{error}</p>
+          <button onClick={() => setRetry((value) => value + 1)}>Retry</button>
+        </div>
+      ) : documents.length === 0 ? (
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', textAlign: 'center', marginTop: '24px' }}>No documents uploaded yet.</p>
       ) : (
         <div className="doc-list">

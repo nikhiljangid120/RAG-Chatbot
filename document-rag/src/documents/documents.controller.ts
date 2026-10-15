@@ -29,6 +29,7 @@ export class DocumentsController {
   @UseInterceptors(
     FileInterceptor('file', {
       storage: memoryStorage(), // Keeps file in RAM — no disk temp files
+      limits: { fileSize: 10 * 1024 * 1024, files: 1 },
     }),
   )
   async uploadDocument(

@@ -85,6 +85,12 @@ button {
   border-right: 1px solid var(--border);
   padding: 24px;
   gap: 32px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.sidebar > * {
+  flex-shrink: 0;
 }
 
 .main-content {

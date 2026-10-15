@@ -13,6 +13,30 @@ export interface RetrievedChunk {
   documentId: string;
   documentFilename: string; // Source citation shown to the user
   similarityScore: number; // 0 to 1 — higher means more relevant
+  rrfScore?: number; // Hybrid ranking only; never displayed as a percentage.
+}
+
+type RawRetrievedChunk = Omit<
+  RetrievedChunk,
+  'similarityScore' | 'rrfScore'
+> & {
+  similarityScore: number | string;
+  rrfScore?: number | string;
+};
+
+function normalizeScores(rows: RawRetrievedChunk[]): RetrievedChunk[] {
+  return rows.map((row) => {
+    const similarityScore = Number(row.similarityScore);
+    const rrfScore =
+      row.rrfScore === undefined ? undefined : Number(row.rrfScore);
+    if (
+      !Number.isFinite(similarityScore) ||
+      (rrfScore !== undefined && !Number.isFinite(rrfScore))
+    ) {
+      throw new Error('Database returned an invalid retrieval score.');
+    }
+    return { ...row, similarityScore, rrfScore };
+  });
 }
 
 /**
@@ -72,7 +96,7 @@ export class RetrievalService {
 
     // Sub-query pattern: compute alias in inner query, filter alias in outer query.
     // Avoids evaluating the cosine expression twice.
-    const results = await this.dataSource.query(
+    const rows: RawRetrievedChunk[] = await this.dataSource.query(
       `
       SELECT *
       FROM (
@@ -94,13 +118,14 @@ export class RetrievalService {
       `,
       [vectorLiteral, topK, minScore],
     );
+    const results = normalizeScores(rows);
 
     this.logger.log(
       `[VECTOR] ${results.length} chunks above threshold. ` +
         `Top similarity: ${results[0]?.similarityScore?.toFixed(4) ?? 'N/A'}`,
     );
 
-    return results as RetrievedChunk[];
+    return results;
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -145,7 +170,8 @@ export class RetrievalService {
    *   Final SELECT:      FULL OUTER JOIN both CTEs, apply RRF formula,
    *                      ORDER BY rrf_score DESC, LIMIT $2
    *
-   * The returned "similarityScore" is the raw RRF score (not 0–1 cosine).
+   * "similarityScore" is cosine similarity for citations; "rrfScore" is
+   * used only for ranking and is not a percentage.
    * A separate minScore filter is NOT applied here because RRF scores are
    * not directly comparable to cosine similarity values — instead we rely
    * on a rank cutoff ($2 LIMIT) plus the BM25 fallback to guarantee quality.
@@ -171,7 +197,7 @@ export class RetrievalService {
     //   - plainto_tsquery() is used instead — it handles arbitrary user input safely
     //   - We pass the raw text as $2 and let PostgreSQL parse it
     const candidateLimit = topK * 2;
-    const results = await this.dataSource.query(
+    const rows: RawRetrievedChunk[] = await this.dataSource.query(
       `
       -- ─── CTE 1: VECTOR SEARCH ───────────────────────────────────────────────
       -- Find the top candidate chunks via cosine similarity.
@@ -189,6 +215,7 @@ export class RetrievalService {
         FROM   chunks c
         INNER JOIN documents d ON c."documentId" = d.id
         WHERE  c.embedding IS NOT NULL
+        ORDER BY c.embedding <=> $1::vector ASC, c.id
         LIMIT  $3
       ),
 
@@ -203,6 +230,7 @@ export class RetrievalService {
           c.metadata,
           c."documentId",
           d.filename                                      AS "documentFilename",
+          1 - (c.embedding <=> $1::vector)                AS vector_score,
           ts_rank("searchVector", plainto_tsquery('english', $2))   AS bm25_score,
           RANK() OVER (
             ORDER BY ts_rank("searchVector", plainto_tsquery('english', $2)) DESC
@@ -210,6 +238,7 @@ export class RetrievalService {
         FROM   chunks c
         INNER JOIN documents d ON c."documentId" = d.id
         WHERE  "searchVector" @@ plainto_tsquery('english', $2)
+        ORDER BY ts_rank("searchVector", plainto_tsquery('english', $2)) DESC, c.id
         LIMIT  $3
       ),
 
@@ -224,11 +253,12 @@ export class RetrievalService {
           COALESCE(v.metadata,          b.metadata)          AS metadata,
           COALESCE(v."documentId",      b."documentId")      AS "documentId",
           COALESCE(v."documentFilename",b."documentFilename") AS "documentFilename",
+          COALESCE(v.vector_score, b.vector_score, 0)::double precision AS "similarityScore",
           -- RRF score — higher is better
           (
-            1.0 / (60 + COALESCE(v.vector_rank, ($3 + 1)))
-          + 1.0 / (60 + COALESCE(b.bm25_rank,  ($3 + 1)))
-          )                                                  AS "similarityScore"
+            COALESCE(1.0 / (60 + v.vector_rank), 0)
+          + COALESCE(1.0 / (60 + b.bm25_rank), 0)
+          )::double precision                               AS "rrfScore"
         FROM       vector_ranked v
         FULL OUTER JOIN bm25_ranked b ON v."chunkId" = b."chunkId"
       )
@@ -236,17 +266,18 @@ export class RetrievalService {
       -- ─── FINAL: SORT BY RRF SCORE, RETURN TOP-K ─────────────────────────────
       SELECT *
       FROM   rrf
-      ORDER  BY "similarityScore" DESC
+      ORDER  BY "rrfScore" DESC, "chunkId"
       LIMIT  $4
       `,
       [vectorLiteral, queryText, candidateLimit, topK],
     );
+    const results = normalizeScores(rows);
 
     this.logger.log(
       `[HYBRID] ${results.length} chunks returned after RRF merge. ` +
-        `Top RRF score: ${results[0]?.similarityScore?.toFixed(6) ?? 'N/A'}`,
+        `Top RRF score: ${results[0]?.rrfScore?.toFixed(6) ?? 'N/A'}`,
     );
 
-    return results as RetrievedChunk[];
+    return results;
   }
 }
