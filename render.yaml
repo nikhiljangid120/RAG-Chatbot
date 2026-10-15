@@ -1,9 +1,3 @@
-databases:
-  - name: rag-chatbot-db
-    databaseName: rag_chatbot
-    user: rag_user
-    plan: free
-
 services:
   - type: web
     name: nikhil-rag-chatbot
@@ -19,8 +13,6 @@ services:
       - key: DB_SSL
         value: "true"
       - key: DATABASE_URL
-        fromDatabase:
-          name: rag-chatbot-db
-          property: connectionString
+        sync: false
       - key: OPENROUTER_API_KEY
         sync: false
