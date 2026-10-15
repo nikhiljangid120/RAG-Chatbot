@@ -7,7 +7,7 @@ A full-stack Retrieval-Augmented Generation chatbot with a NestJS API, React/Vit
 - `document-rag/` — NestJS API and RAG pipeline
 - `document-rag-ui/` — React + Vite frontend
 - `Dockerfile` — production multi-stage build serving the UI and API together
-- `render.yaml` — Render Blueprint for the app and managed PostgreSQL database
+- `render.yaml` — Render Blueprint for the app with an external PostgreSQL database
 
 ## Local development
 
@@ -47,9 +47,14 @@ VITE_API_URL=http://localhost:3000/api npm run dev
 
 ## Production deployment on Render
 
-1. Open Render Blueprints and select this repository.
-2. Render reads `render.yaml` and creates the Docker web service plus PostgreSQL.
-3. Enter `OPENROUTER_API_KEY` when prompted.
-4. Deploy. The UI and API are served from one HTTPS domain; the API lives under `/api`.
+1. Create a PostgreSQL database that supports pgvector, for example on [Neon](https://neon.com/docs/extensions/pgvector). Choose a region close to the Render service and copy the connection string from the database's Connect dialog.
+2. Open Render Blueprints and select this repository. `render.yaml` creates only the Docker web service; it does not provision a Render database.
+3. Set `DATABASE_URL` to the external database connection string and enter `OPENROUTER_API_KEY`. `DB_SSL=true` is already set in the Blueprint.
+4. For an existing Render service, update `DATABASE_URL` under **Environment**, keep `DB_SSL=true`, then save and redeploy the latest commit. Changing the Blueprint alone does not replace an existing service's database credentials.
+5. Verify `/api` and `/api/documents` return successful responses, then upload a document and test a hybrid-search question. The UI and API are served from one HTTPS domain; the API lives under `/api`.
 
-The production startup script creates the `vector` extension before NestJS synchronizes the schema. Upgrade the free database/service plans for persistent production use and stronger availability.
+The production startup script creates the `vector` extension before NestJS synchronizes the schema. After synchronization, startup backfills missing search vectors and creates the GIN index, including on a completely new database.
+
+[Render's free PostgreSQL databases expire after 30 days](https://render.com/docs/free). Using an external database avoids that Render database expiry; the web service can remain on Render. External free plans still have usage limits; check [Neon's current allowances](https://neon.com/docs/introduction/plans).
+
+Switching `DATABASE_URL` starts with the contents of the replacement database; it does not migrate old documents. Restore a backup if available, or re-upload the source documents. Keep the suspended database until any needed data has been recovered.

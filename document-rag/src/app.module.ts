@@ -12,6 +12,7 @@ import { QaModule } from './qa/qa.module';
 
 // ── Centralized DB Config ─────────────────────────────────────────
 import { getDatabaseConfig } from './config/database.config';
+import { SearchSchemaService } from './config/search-schema.service';
 
 @Module({
   imports: [
@@ -33,6 +34,6 @@ import { getDatabaseConfig } from './config/database.config';
     QaModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [AppService, SearchSchemaService],
 })
 export class AppModule {}

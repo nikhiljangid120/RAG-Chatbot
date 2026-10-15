@@ -1,7 +1,14 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  ManyToOne,
+  Index,
+} from 'typeorm';
 import { DocumentEntity } from './document.entity';
 
 @Entity('chunks')
+@Index('idx_chunks_search_vector', { synchronize: false })
 export class ChunkEntity {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -50,7 +57,8 @@ export class ChunkEntity {
    * the column as a raw 'tsvector' type; populating it is handled in application code.
    *
    * NOTE: synchronize:true will add this column on next server restart.
-   * Existing chunks will have NULL searchVector until their document is re-uploaded.
+   * SearchSchemaService backfills existing chunks and creates the GIN index
+   * after schema synchronization, before the application accepts requests.
    */
   @Column({
     type: 'tsvector',
