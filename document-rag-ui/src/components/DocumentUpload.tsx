@@ -1,7 +1,6 @@
 import { useState, useRef } from 'react';
 import axios from 'axios';
 import { UploadCloud, CheckCircle, AlertCircle, Loader } from 'lucide-react';
-
 const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '');
 
 interface DocumentUploadProps {

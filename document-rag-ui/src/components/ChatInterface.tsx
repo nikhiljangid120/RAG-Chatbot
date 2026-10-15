@@ -1,14 +1,21 @@
 import { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
-import { Send, User, Bot, Layers } from 'lucide-react';
+import { Send, User, Bot, Layers, Zap } from 'lucide-react';
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '');
+interface Source {
+  filename: string;
+  chunkIndex: number;
+  similarityScore: number;
+}
+
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  sources?: any[];
+  sources?: Source[];
+  searchMode?: string;
+  isStreaming?: boolean; // true while tokens are still arriving
 }
 
 export function ChatInterface() {
@@ -28,42 +35,147 @@ export function ChatInterface() {
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || isLoading) return;
 
+    const question = input.trim();
+
+    // Add the user message immediately
     const userMessage: Message = {
       id: Date.now().toString(),
       role: 'user',
-      content: input.trim(),
+      content: question,
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    // Add a placeholder assistant message that we'll stream into
+    const assistantId = (Date.now() + 1).toString();
+    const assistantPlaceholder: Message = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      isStreaming: true,
+    };
+
+    setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
     setInput('');
     setIsLoading(true);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/qa/ask`, {
-        question: userMessage.content,
+      // ── STREAMING via fetch + ReadableStream ────────────────────────────────
+      // We use the native fetch API instead of axios because axios doesn't expose
+      // the response body as a ReadableStream in the browser.
+      //
+      // SSE event format from our backend:
+      //   data: {"type":"sources","sources":[...]}\n\n
+      //   data: {"type":"token","token":"The "}\n\n
+      //   data: [DONE]\n\n
+      const response = await fetch(`${API_BASE_URL}/qa/ask/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question, searchMode: 'hybrid' }),
       });
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: response.data.answer,
-          sources: response.data.sources,
-        },
-      ]);
+      if (!response.ok || !response.body) {
+        throw new Error(`Server error: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        // Decode raw bytes and append to line buffer
+        buffer += decoder.decode(value, { stream: true });
+
+        // Split on double-newline (SSE event boundary)
+        const events = buffer.split('\n\n');
+
+        // Keep the last (potentially incomplete) event in the buffer
+        buffer = events.pop() ?? '';
+
+        for (const event of events) {
+          const line = event.trim();
+          if (!line.startsWith('data: ')) continue;
+
+          const payload = line.slice(6); // strip 'data: '
+
+          // End of stream
+          if (payload === '[DONE]') {
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, isStreaming: false } : m,
+              ),
+            );
+            break;
+          }
+
+          try {
+            const parsed = JSON.parse(payload);
+
+            if (parsed.type === 'sources') {
+              // Sources arrive before any tokens — render badges immediately
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, sources: parsed.sources, searchMode: parsed.searchMode }
+                    : m,
+                ),
+              );
+            } else if (parsed.type === 'token') {
+              // Append each token to the streaming message bubble
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: m.content + parsed.token }
+                    : m,
+                ),
+              );
+            } else if (parsed.type === 'error') {
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantId
+                    ? { ...m, content: `Error: ${parsed.message}`, isStreaming: false }
+                    : m,
+                ),
+              );
+            }
+          } catch {
+            // Malformed JSON event — skip
+          }
+        }
+      }
     } catch (error: any) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: `Error: ${error.response?.data?.message || 'Failed to get answer. Please try again.'}`,
-        },
-      ]);
+      // Replace the streaming placeholder with an error message
+      setMessages((prev) =>
+        prev
+          .map((m) =>
+            m.id === assistantId
+              ? {
+                  ...m,
+                  content: `Error: ${error.message || 'Failed to connect to the server.'}`,
+                  isStreaming: false,
+                }
+              : m,
+          )
+          .concat(
+            prev.find((m) => m.role === 'assistant' && m.isStreaming)
+              ? []
+              : [
+                  {
+                    id: (Date.now() + 2).toString(),
+                    role: 'assistant' as const,
+                    content: `Error: ${error.message || 'Failed to get answer.'}`,
+                  },
+                ],
+          ),
+      );
     } finally {
+      // Mark the streaming message as done (in case of early error)
+      setMessages((prev) =>
+        prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m)),
+      );
       setIsLoading(false);
     }
   };
@@ -73,7 +185,14 @@ export function ChatInterface() {
       <div className="chat-header">
         <div>
           <h2 className="chat-title">RAG Assistant</h2>
-          <p className="chat-subtitle">Ask questions based on your uploaded documents</p>
+          <p className="chat-subtitle">
+            Ask questions based on your uploaded documents
+          </p>
+        </div>
+        {/* Streaming indicator badge */}
+        <div className="stream-badge" title="Streaming mode active">
+          <Zap size={12} />
+          <span>Live</span>
         </div>
       </div>
 
@@ -83,25 +202,43 @@ export function ChatInterface() {
             <div className={`avatar ${msg.role}`}>
               {msg.role === 'user' ? <User size={20} /> : <Bot size={20} />}
             </div>
+
             <div className="message-content">
-              <div className="message-bubble">{msg.content}</div>
+              <div className={`message-bubble ${msg.isStreaming ? 'streaming' : ''}`}>
+                {msg.content}
+                {/* Blinking cursor while streaming */}
+                {msg.isStreaming && <span className="stream-cursor">▊</span>}
+              </div>
+
+              {/* Source citations — rendered as soon as sources event arrives */}
               {msg.sources && msg.sources.length > 0 && (
                 <div className="sources-container">
                   {msg.sources.map((source, idx) => (
-                    <div key={idx} className="source-tag" title={`Score: ${source.similarityScore}`}>
+                    <div
+                      key={idx}
+                      className="source-tag"
+                      title={`Relevance: ${source.similarityScore.toFixed(2)}%`}
+                    >
                       <Layers size={12} />
-                      {source.filename} (Chunk {source.chunkIndex})
+                      {source.filename} · Chunk {source.chunkIndex}
+                      <span className="source-score">{source.similarityScore.toFixed(1)}%</span>
                     </div>
                   ))}
+                  {msg.searchMode && (
+                    <span className="search-mode-badge">{msg.searchMode}</span>
+                  )}
                 </div>
               )}
             </div>
           </div>
         ))}
 
-        {isLoading && (
+        {/* Classic typing indicator only shown while waiting for first token */}
+        {isLoading && messages[messages.length - 1]?.content === '' && (
           <div className="message assistant animate-fade-in">
-            <div className="avatar assistant"><Bot size={20} /></div>
+            <div className="avatar assistant">
+              <Bot size={20} />
+            </div>
             <div className="typing-indicator">
               <div className="dot"></div>
               <div className="dot"></div>
@@ -109,6 +246,7 @@ export function ChatInterface() {
             </div>
           </div>
         )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -123,7 +261,11 @@ export function ChatInterface() {
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             disabled={isLoading}
           />
-          <button className="send-btn" onClick={handleSend} disabled={isLoading || !input.trim()}>
+          <button
+            className="send-btn"
+            onClick={handleSend}
+            disabled={isLoading || !input.trim()}
+          >
             <Send size={18} />
           </button>
         </div>

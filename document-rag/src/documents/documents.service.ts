@@ -121,9 +121,32 @@ export class DocumentsService {
       // ─── STAGE 9: BULK SAVE CHUNKS TO DB ────────────────────────
       await this.chunkRepository.save(chunkEntities);
 
+      // ─── STAGE 9B: POPULATE FULL-TEXT SEARCH VECTOR ─────────────
+      // Convert each chunk's content into a PostgreSQL tsvector so it
+      // can participate in BM25-style keyword search (Hybrid Search).
+      //
+      // WHY A SEPARATE UPDATE (not in the entity insert):
+      // TypeORM's save() maps JS types to SQL types, but `tsvector` is
+      // a PostgreSQL-native computed type with no direct JS equivalent.
+      // The cleanest approach is a single parameterized UPDATE after insert:
+      //
+      //   to_tsvector('english', content)
+      //     - 'english': use the English dictionary (stemming, stop words)
+      //     - content:   the chunk's raw text column
+      //
+      // This runs once per document upload, so it's not a hot-path concern.
+      this.logger.log('Populating full-text search vectors (tsvector)...');
+      await this.dataSource.query(
+        `UPDATE chunks
+         SET    "searchVector" = to_tsvector('english', content)
+         WHERE  "documentId" = $1`,
+        [document.id],
+      );
+      this.logger.log('Full-text search vectors populated.');
+
       // ─── STAGE 10: MARK DOCUMENT AS COMPLETED ───────────────────
       await this.documentRepository.update(document.id, { status: 'COMPLETED' });
-      this.logger.log(`Ingestion complete: ${textChunks.length} chunks saved with embeddings`);
+      this.logger.log(`Ingestion complete: ${textChunks.length} chunks saved with embeddings + FTS vectors`);
 
       return {
         success: true,
