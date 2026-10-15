@@ -7,12 +7,12 @@ import { DataSource } from 'typeorm';
  */
 export interface RetrievedChunk {
   chunkId: string;
-  content: string;          // The actual text — fed into the LLM prompt
-  chunkIndex: number;       // Position in the original document
-  metadata: any;            // { startChar, endChar, charCount }
+  content: string; // The actual text — fed into the LLM prompt
+  chunkIndex: number; // Position in the original document
+  metadata: any; // { startChar, endChar, charCount }
   documentId: string;
   documentFilename: string; // Source citation shown to the user
-  similarityScore: number;  // 0 to 1 — higher means more relevant
+  similarityScore: number; // 0 to 1 — higher means more relevant
 }
 
 /**
@@ -62,7 +62,7 @@ export class RetrievalService {
   async findSimilarChunks(
     queryEmbedding: number[],
     topK: number = 5,
-    minScore: number = 0.50,
+    minScore: number = 0.5,
   ): Promise<RetrievedChunk[]> {
     this.logger.log(
       `[VECTOR] Searching top-${topK} chunks (minScore=${minScore})...`,
@@ -97,7 +97,7 @@ export class RetrievalService {
 
     this.logger.log(
       `[VECTOR] ${results.length} chunks above threshold. ` +
-      `Top similarity: ${results[0]?.similarityScore?.toFixed(4) ?? 'N/A'}`,
+        `Top similarity: ${results[0]?.similarityScore?.toFixed(4) ?? 'N/A'}`,
     );
 
     return results as RetrievedChunk[];
@@ -170,11 +170,11 @@ export class RetrievalService {
     //   - Join with ' & ' (AND operator) so all words must be present for a match
     //   - plainto_tsquery() is used instead — it handles arbitrary user input safely
     //   - We pass the raw text as $2 and let PostgreSQL parse it
+    const candidateLimit = topK * 2;
     const results = await this.dataSource.query(
       `
       -- ─── CTE 1: VECTOR SEARCH ───────────────────────────────────────────────
-      -- Find the top-(topK * 2) candidates via cosine similarity.
-      -- We oversample (topK * 2) because after RRF merging we'll trim to topK.
+      -- Find the top candidate chunks via cosine similarity.
       -- RANK() assigns 1 to the most similar chunk (smallest distance).
       WITH vector_ranked AS (
         SELECT
@@ -189,13 +189,11 @@ export class RetrievalService {
         FROM   chunks c
         INNER JOIN documents d ON c."documentId" = d.id
         WHERE  c.embedding IS NOT NULL
-        LIMIT  ($3 * 2)
+        LIMIT  $3
       ),
 
       -- ─── CTE 2: BM25 KEYWORD SEARCH (PostgreSQL FTS) ────────────────────────
       -- plainto_tsquery() safely converts raw user text into a tsquery.
-      -- Example: "leave policy 2024" → 'leav' & 'polici' & '2024' (stemmed)
-      -- ts_rank() scores how well the tsvector matches the query.
       -- RANK() assigns 1 to the highest ts_rank chunk.
       bm25_ranked AS (
         SELECT
@@ -212,18 +210,12 @@ export class RetrievalService {
         FROM   chunks c
         INNER JOIN documents d ON c."documentId" = d.id
         WHERE  "searchVector" @@ plainto_tsquery('english', $2)
-        LIMIT  ($3 * 2)
+        LIMIT  $3
       ),
 
       -- ─── CTE 3: RECIPROCAL RANK FUSION ──────────────────────────────────────
       -- FULL OUTER JOIN so a chunk appearing in only one list still gets a score.
-      -- COALESCE handles NULLs: if a chunk didn't appear in BM25, its bm25_rank
-      -- is treated as (topK * 2 + 1) — just beyond the search window, scoring low.
-      --
-      -- RRF formula: score = 1/(k + vector_rank) + 1/(k + bm25_rank)
-      --   k = 60 (recommended constant from Cormack et al.)
-      --
-      -- COALESCE(v."chunkId", b."chunkId"): pick the id from whichever list has it.
+      -- RRF formula: score = 1/(k + vector_rank) + 1/(k + bm25_rank) (k = 60)
       rrf AS (
         SELECT
           COALESCE(v."chunkId",         b."chunkId")         AS "chunkId",
@@ -234,8 +226,8 @@ export class RetrievalService {
           COALESCE(v."documentFilename",b."documentFilename") AS "documentFilename",
           -- RRF score — higher is better
           (
-            1.0 / (60 + COALESCE(v.vector_rank, ($3 * 2 + 1)))
-          + 1.0 / (60 + COALESCE(b.bm25_rank,  ($3 * 2 + 1)))
+            1.0 / (60 + COALESCE(v.vector_rank, ($3 + 1)))
+          + 1.0 / (60 + COALESCE(b.bm25_rank,  ($3 + 1)))
           )                                                  AS "similarityScore"
         FROM       vector_ranked v
         FULL OUTER JOIN bm25_ranked b ON v."chunkId" = b."chunkId"
@@ -245,14 +237,14 @@ export class RetrievalService {
       SELECT *
       FROM   rrf
       ORDER  BY "similarityScore" DESC
-      LIMIT  $3
+      LIMIT  $4
       `,
-      [vectorLiteral, queryText, topK],
+      [vectorLiteral, queryText, candidateLimit, topK],
     );
 
     this.logger.log(
       `[HYBRID] ${results.length} chunks returned after RRF merge. ` +
-      `Top RRF score: ${results[0]?.similarityScore?.toFixed(6) ?? 'N/A'}`,
+        `Top RRF score: ${results[0]?.similarityScore?.toFixed(6) ?? 'N/A'}`,
     );
 
     return results as RetrievedChunk[];

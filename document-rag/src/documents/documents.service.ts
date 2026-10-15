@@ -1,4 +1,9 @@
-import { Injectable, ConflictException, Logger, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as crypto from 'crypto';
@@ -35,12 +40,11 @@ export class DocumentsService {
    */
   async uploadDocument(file: Express.Multer.File) {
     // ─── STAGE 2: HASH GENERATION ───────────────────────────────
-    const hash = crypto
-      .createHash('sha256')
-      .update(file.buffer)
-      .digest('hex');
+    const hash = crypto.createHash('sha256').update(file.buffer).digest('hex');
 
-    this.logger.log(`Processing: "${file.originalname}" | Hash: ${hash.slice(0, 16)}...`);
+    this.logger.log(
+      `Processing: "${file.originalname}" | Hash: ${hash.slice(0, 16)}...`,
+    );
 
     // ─── STAGE 3: DUPLICATE DETECTION ───────────────────────────
     const existing = await this.documentRepository.findOne({ where: { hash } });
@@ -84,7 +88,11 @@ export class DocumentsService {
       this.logger.log(`Extracted ${extractedText.length} characters`);
 
       // STAGE 6: CHUNKING
-      const textChunks = this.chunkingService.chunkText(extractedText, 500, 100);
+      const textChunks = this.chunkingService.chunkText(
+        extractedText,
+        500,
+        100,
+      );
 
       if (textChunks.length === 0) {
         await this.documentRepository.update(document.id, { status: 'FAILED' });
@@ -102,8 +110,11 @@ export class DocumentsService {
       // Batch > one-by-one: 50 chunks = 1 model call, not 50.
       this.logger.log('Generating embeddings for all chunks...');
       const chunkTexts = textChunks.map((c) => c.content);
-      const embeddings = await this.embeddingsService.generateEmbeddings(chunkTexts);
-      this.logger.log(`Embeddings generated: ${embeddings.length} vectors (dim=384)`);
+      const embeddings =
+        await this.embeddingsService.generateEmbeddings(chunkTexts);
+      this.logger.log(
+        `Embeddings generated: ${embeddings.length} vectors (dim=384)`,
+      );
 
       // ─── STAGE 8: BUILD CHUNK ENTITIES WITH EMBEDDINGS ──────────
       // Assign the embedding vector to each chunk entity.
@@ -145,8 +156,12 @@ export class DocumentsService {
       this.logger.log('Full-text search vectors populated.');
 
       // ─── STAGE 10: MARK DOCUMENT AS COMPLETED ───────────────────
-      await this.documentRepository.update(document.id, { status: 'COMPLETED' });
-      this.logger.log(`Ingestion complete: ${textChunks.length} chunks saved with embeddings + FTS vectors`);
+      await this.documentRepository.update(document.id, {
+        status: 'COMPLETED',
+      });
+      this.logger.log(
+        `Ingestion complete: ${textChunks.length} chunks saved with embeddings + FTS vectors`,
+      );
 
       return {
         success: true,
@@ -156,12 +171,15 @@ export class DocumentsService {
         chunksCreated: textChunks.length,
         totalCharacters: extractedText.length,
         embeddingDimension: 384,
-        message: 'Document uploaded, parsed, chunked, and embedded successfully.',
+        message:
+          'Document uploaded, parsed, chunked, and embedded successfully.',
       };
     } catch (error) {
       this.logger.error(`Ingestion failed: ${error.message}`, error.stack);
       await this.documentRepository.update(document.id, { status: 'FAILED' });
-      throw new InternalServerErrorException(`Document processing failed: ${error.message}`);
+      throw new InternalServerErrorException(
+        `Document processing failed: ${error.message}`,
+      );
     }
   }
 

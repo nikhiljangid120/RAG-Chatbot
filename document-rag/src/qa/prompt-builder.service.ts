@@ -67,9 +67,6 @@ export class PromptBuilderService {
       })
       .join('\n\n');
 
-    return (
-      `CONTEXT:\n${contextBlocks}\n\n` +
-      `QUESTION:\n${question}`
-    );
+    return `CONTEXT:\n${contextBlocks}\n\n` + `QUESTION:\n${question}`;
   }
 }

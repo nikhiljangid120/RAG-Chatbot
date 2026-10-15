@@ -146,7 +146,8 @@ export function ChatInterface() {
           }
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Failed to connect to the server.';
       // Replace the streaming placeholder with an error message
       setMessages((prev) =>
         prev
@@ -154,7 +155,7 @@ export function ChatInterface() {
             m.id === assistantId
               ? {
                   ...m,
-                  content: `Error: ${error.message || 'Failed to connect to the server.'}`,
+                  content: `Error: ${msg}`,
                   isStreaming: false,
                 }
               : m,
@@ -166,7 +167,7 @@ export function ChatInterface() {
                   {
                     id: (Date.now() + 2).toString(),
                     role: 'assistant' as const,
-                    content: `Error: ${error.message || 'Failed to get answer.'}`,
+                    content: `Error: ${msg}`,
                   },
                 ],
           ),

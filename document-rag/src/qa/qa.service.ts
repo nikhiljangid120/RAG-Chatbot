@@ -6,9 +6,12 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-import { Response } from 'express';
+import type { Response } from 'express';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
-import { RetrievalService, RetrievedChunk } from '../retrieval/retrieval.service';
+import {
+  RetrievalService,
+  RetrievedChunk,
+} from '../retrieval/retrieval.service';
 import { PromptBuilderService } from './prompt-builder.service';
 import { SearchMode } from './ask-question.dto';
 
@@ -32,7 +35,7 @@ const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
  *
  * Callers can override this per-request via the AskQuestionDto.minScore field.
  */
-const DEFAULT_MIN_SCORE = 0.50;
+const DEFAULT_MIN_SCORE = 0.5;
 
 /**
  * Default search mode — hybrid catches exact terms that pure vector search misses.
@@ -72,7 +75,7 @@ export class QaService {
     if (!key) {
       throw new Error(
         'OPENROUTER_API_KEY is not set in .env. ' +
-        'Get your key from https://openrouter.ai/keys',
+          'Get your key from https://openrouter.ai/keys',
       );
     }
     this.openRouterApiKey = key;
@@ -119,7 +122,9 @@ export class QaService {
     // as the stored chunk embeddings. This is what makes the similarity
     // search meaningful — apples compared to apples.
     this.logger.log('Embedding user question...');
-    const queryEmbedding = await this.embeddingsService.generateEmbedding(question.trim());
+    const queryEmbedding = await this.embeddingsService.generateEmbedding(
+      question.trim(),
+    );
 
     // ─── STEP 2: RETRIEVE RELEVANT CHUNKS ─────────────────────────────────
     // Route to the appropriate retrieval strategy:
@@ -137,7 +142,7 @@ export class QaService {
         ? await this.retrievalService.findHybridChunks(
             queryEmbedding,
             question.trim(), // raw text for BM25
-            5,               // top-K final results after RRF merge
+            5, // top-K final results after RRF merge
           )
         : await this.retrievalService.findSimilarChunks(
             queryEmbedding,
@@ -153,15 +158,18 @@ export class QaService {
     if (retrievedChunks.length === 0) {
       // Distinguish between "no docs at all" vs "no docs above threshold"
       // by re-querying with minScore=0 to check if ANY chunks exist.
-      const anyChunks: RetrievedChunk[] = await this.retrievalService.findSimilarChunks(
-        queryEmbedding,
-        1,
-        0, // no threshold — just check if anything exists
-      );
+      const anyChunks: RetrievedChunk[] =
+        await this.retrievalService.findSimilarChunks(
+          queryEmbedding,
+          1,
+          0, // no threshold — just check if anything exists
+        );
 
       if (anyChunks.length === 0) {
         // ── CASE A: No documents have been uploaded at all ────────────────
-        this.logger.warn('No documents in the database. Returning upload prompt.');
+        this.logger.warn(
+          'No documents in the database. Returning upload prompt.',
+        );
         return {
           answer:
             'No documents have been uploaded yet. ' +
@@ -183,8 +191,8 @@ export class QaService {
       const bestAvailable = anyChunks[0];
       this.logger.warn(
         `All chunks scored below threshold. ` +
-        `Best available similarity: ${bestAvailable.similarityScore.toFixed(4)} ` +
-        `(threshold: ${safeMinScore}). Skipping LLM call.`,
+          `Best available similarity: ${bestAvailable.similarityScore.toFixed(4)} ` +
+          `(threshold: ${safeMinScore}). Skipping LLM call.`,
       );
 
       return {
@@ -209,8 +217,8 @@ export class QaService {
 
     this.logger.log(
       `Retrieved ${retrievedChunks.length} chunks above threshold. ` +
-      `Top chunk from: "${retrievedChunks[0].documentFilename}" ` +
-      `(similarity: ${(retrievedChunks[0].similarityScore * 100).toFixed(1)}%)`,
+        `Top chunk from: "${retrievedChunks[0].documentFilename}" ` +
+        `(similarity: ${(retrievedChunks[0].similarityScore * 100).toFixed(1)}%)`,
     );
 
     // ─── STEP 3: BUILD THE PROMPT ──────────────────────────────────────────
@@ -218,7 +226,10 @@ export class QaService {
     //   - system: grounding rules (answer ONLY from context)
     //   - user:   the context blocks + the actual question
     const systemPrompt = this.promptBuilderService.buildSystemPrompt();
-    const userPrompt = this.promptBuilderService.buildUserPrompt(question, retrievedChunks);
+    const userPrompt = this.promptBuilderService.buildUserPrompt(
+      question,
+      retrievedChunks,
+    );
 
     // ─── STEP 4: CALL LLAMA 3.3 VIA OPENROUTER ────────────────────────────
     // OpenRouter uses the OpenAI chat completion format.
@@ -234,18 +245,18 @@ export class QaService {
           model: OPENROUTER_MODEL,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user',   content: userPrompt   },
+            { role: 'user', content: userPrompt },
           ],
-          temperature: 0.1,    // Low = factual, consistent
-          max_tokens: 1024,    // Enough for a detailed paragraph answer
+          temperature: 0.1, // Low = factual, consistent
+          max_tokens: 1024, // Enough for a detailed paragraph answer
         },
         {
           headers: {
-            'Authorization':  `Bearer ${this.openRouterApiKey}`,
-            'Content-Type':   'application/json',
+            Authorization: `Bearer ${this.openRouterApiKey}`,
+            'Content-Type': 'application/json',
             // OpenRouter requires these headers to identify your app
-            'HTTP-Referer':   'http://localhost:3000',
-            'X-Title':        'Document RAG System',
+            'HTTP-Referer': 'http://localhost:3000',
+            'X-Title': 'Document RAG System',
           },
           timeout: 30000, // 30 second timeout
         },
@@ -349,32 +360,48 @@ export class QaService {
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
     res.setHeader('X-Accel-Buffering', 'no'); // disable nginx buffering
-    res.flushHeaders();                        // flush headers immediately
+    res.flushHeaders(); // flush headers immediately
 
     // Helper: write a single SSE event to the response
     const emit = (payload: object | string) => {
-      const data = typeof payload === 'string' ? payload : JSON.stringify(payload);
+      const data =
+        typeof payload === 'string' ? payload : JSON.stringify(payload);
       res.write(`data: ${data}\n\n`);
     };
 
     try {
       // ─── STEP 1: EMBED ─────────────────────────────────────────────────────
       this.logger.log('[STREAM] Embedding question...');
-      const queryEmbedding = await this.embeddingsService.generateEmbedding(question.trim());
+      const queryEmbedding = await this.embeddingsService.generateEmbedding(
+        question.trim(),
+      );
 
       // ─── STEP 2: RETRIEVE ──────────────────────────────────────────────────
       this.logger.log(`[STREAM] Retrieving chunks via ${searchMode} search...`);
       const retrievedChunks: RetrievedChunk[] =
         searchMode === 'hybrid'
-          ? await this.retrievalService.findHybridChunks(queryEmbedding, question.trim(), 5)
-          : await this.retrievalService.findSimilarChunks(queryEmbedding, 5, safeMinScore);
+          ? await this.retrievalService.findHybridChunks(
+              queryEmbedding,
+              question.trim(),
+              5,
+            )
+          : await this.retrievalService.findSimilarChunks(
+              queryEmbedding,
+              5,
+              safeMinScore,
+            );
 
       // ─── EARLY EXIT: no chunks ─────────────────────────────────────────────
       if (retrievedChunks.length === 0) {
-        const anyChunks = await this.retrievalService.findSimilarChunks(queryEmbedding, 1, 0);
-        const noDocsMsg = anyChunks.length === 0
-          ? 'No documents have been uploaded yet. Please upload a PDF first.'
-          : 'I could not find relevant information in the uploaded documents for your question. Try rephrasing or upload relevant documents.';
+        const anyChunks = await this.retrievalService.findSimilarChunks(
+          queryEmbedding,
+          1,
+          0,
+        );
+        const noDocsMsg =
+          anyChunks.length === 0
+            ? 'No documents have been uploaded yet. Please upload a PDF first.'
+            : 'I could not find relevant information in the uploaded documents for your question. Try rephrasing or upload relevant documents.';
 
         // Emit sources event (empty) then stream the message as tokens
         emit({ type: 'sources', sources: [], searchMode });
@@ -402,13 +429,16 @@ export class QaService {
 
       this.logger.log(
         `[STREAM] ${retrievedChunks.length} chunks retrieved. ` +
-        `Top: "${retrievedChunks[0].documentFilename}" (${(retrievedChunks[0].similarityScore * 100).toFixed(1)}%). ` +
-        `Opening token stream to OpenRouter...`,
+          `Top: "${retrievedChunks[0].documentFilename}" (${(retrievedChunks[0].similarityScore * 100).toFixed(1)}%). ` +
+          `Opening token stream to OpenRouter...`,
       );
 
       // ─── STEP 4: BUILD PROMPT ──────────────────────────────────────────────
       const systemPrompt = this.promptBuilderService.buildSystemPrompt();
-      const userPrompt = this.promptBuilderService.buildUserPrompt(question, retrievedChunks);
+      const userPrompt = this.promptBuilderService.buildUserPrompt(
+        question,
+        retrievedChunks,
+      );
 
       // ─── STEP 5: CALL OPENROUTER WITH stream: true ─────────────────────────
       // OpenRouter streams OpenAI-compatible SSE chunks:
@@ -424,21 +454,21 @@ export class QaService {
           model: OPENROUTER_MODEL,
           messages: [
             { role: 'system', content: systemPrompt },
-            { role: 'user',   content: userPrompt },
+            { role: 'user', content: userPrompt },
           ],
           temperature: 0.1,
           max_tokens: 1024,
-          stream: true,  // ← STREAMING ENABLED
+          stream: true, // ← STREAMING ENABLED
         },
         {
           headers: {
-            'Authorization': `Bearer ${this.openRouterApiKey}`,
-            'Content-Type':  'application/json',
-            'HTTP-Referer':  'http://localhost:3000',
-            'X-Title':       'Document RAG System',
+            Authorization: `Bearer ${this.openRouterApiKey}`,
+            'Content-Type': 'application/json',
+            'HTTP-Referer': 'http://localhost:3000',
+            'X-Title': 'Document RAG System',
           },
-          responseType: 'stream',  // ← Axios returns a Node.js Readable
-          timeout: 60000,          // longer timeout for streaming
+          responseType: 'stream', // ← Axios returns a Node.js Readable
+          timeout: 60000, // longer timeout for streaming
         },
       );
 
@@ -509,7 +539,10 @@ export class QaService {
       // Emit an error event so the UI can display it gracefully
       this.logger.error(`[STREAM] Error: ${error?.message}`);
       try {
-        emit({ type: 'error', message: error?.response?.data?.error?.message ?? error.message });
+        emit({
+          type: 'error',
+          message: error?.response?.data?.error?.message ?? error.message,
+        });
         emit('[DONE]');
       } catch {
         // Response may already be partially written — nothing more we can do

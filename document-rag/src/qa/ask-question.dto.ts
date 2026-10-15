@@ -55,6 +55,8 @@ export class AskQuestionDto {
    */
   @IsOptional()
   @IsString()
-  @IsIn(['vector', 'hybrid'], { message: 'searchMode must be either "vector" or "hybrid"' })
+  @IsIn(['vector', 'hybrid'], {
+    message: 'searchMode must be either "vector" or "hybrid"',
+  })
   searchMode?: SearchMode;
 }

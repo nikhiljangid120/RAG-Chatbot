@@ -36,4 +36,3 @@ import { getDatabaseConfig } from './config/database.config';
   providers: [AppService],
 })
 export class AppModule {}
-

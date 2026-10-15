@@ -1,5 +1,12 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, OneToMany } from 'typeorm';
-import {ChunkEntity} from './chunk.entity';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  OneToMany,
+} from 'typeorm';
+import { ChunkEntity } from './chunk.entity';
 
 @Entity('documents')
 export class DocumentEntity {

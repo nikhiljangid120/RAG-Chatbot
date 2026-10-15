@@ -18,7 +18,7 @@ export class EmbeddingsService implements OnModuleInit {
 
   // The pipeline is the loaded model, stored as a class property
   // so it is initialized once and reused across all calls.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   private extractor: any = null;
 
   /**
@@ -36,8 +36,8 @@ export class EmbeddingsService implements OnModuleInit {
     const { pipeline } = await import('@xenova/transformers');
 
     this.extractor = await pipeline(
-      'feature-extraction',        // Task type: extract feature vectors from text
-      'Xenova/all-MiniLM-L6-v2',  // Model: MiniLM → outputs 384-dim vectors
+      'feature-extraction', // Task type: extract feature vectors from text
+      'Xenova/all-MiniLM-L6-v2', // Model: MiniLM → outputs 384-dim vectors
     );
 
     this.logger.log('Model loaded and ready. Embedding dimension: 384');
@@ -54,12 +54,17 @@ export class EmbeddingsService implements OnModuleInit {
    */
   async generateEmbedding(text: string): Promise<number[]> {
     if (!this.extractor) {
-      throw new Error('Embedding model is not loaded yet. OnModuleInit may not have completed.');
+      throw new Error(
+        'Embedding model is not loaded yet. OnModuleInit may not have completed.',
+      );
     }
 
     // pooling: 'mean' averages all token embeddings into one vector
     // normalize: true scales the vector to unit length (required for cosine similarity)
-    const output = await this.extractor(text, { pooling: 'mean', normalize: true });
+    const output = await this.extractor(text, {
+      pooling: 'mean',
+      normalize: true,
+    });
 
     // output.data is a Float32Array — convert to plain number[] for TypeORM/pgvector
     return Array.from(output.data as Float32Array);

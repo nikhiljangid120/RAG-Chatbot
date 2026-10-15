@@ -55,13 +55,15 @@ export class ChunkEntity {
   @Column({
     type: 'tsvector',
     nullable: true,
-    select: false,  // exclude from default SELECT * — it's large and not needed in responses
+    select: false, // exclude from default SELECT * — it's large and not needed in responses
   })
   searchVector: any;
 
   // The Many-to-One relationship.
   // onDelete: 'CASCADE' means if the parent document is deleted, these chunks die with it automatically.
-  @ManyToOne(() => DocumentEntity, (document) => document.chunks, { onDelete: 'CASCADE' })
+  @ManyToOne(() => DocumentEntity, (document) => document.chunks, {
+    onDelete: 'CASCADE',
+  })
   document: DocumentEntity;
 
   // Virtual FK helper — TypeORM populates this from the JOIN; not a separate DB column.

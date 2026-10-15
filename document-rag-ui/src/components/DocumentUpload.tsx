@@ -33,8 +33,12 @@ export function DocumentUpload({ onUploadComplete }: DocumentUploadProps) {
       });
       setSuccess(`Uploaded ${response.data.filename} successfully (${response.data.chunksCreated} chunks)`);
       onUploadComplete();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Upload failed');
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        setError(err.response?.data?.message || 'Upload failed');
+      } else {
+        setError(err instanceof Error ? err.message : 'Upload failed');
+      }
     } finally {
       setIsUploading(false);
     }

@@ -42,7 +42,7 @@ export class ChunkingService {
    *   Chunk 1: chars [400,  900]   ← 100 char overlap with Chunk 0
    *   Chunk 2: chars [800, 1300]   ← 100 char overlap with Chunk 1
    */
-  chunkText(  
+  chunkText(
     text: string,
     chunkSize: number = this.DEFAULT_CHUNK_SIZE,
     overlap: number = this.DEFAULT_OVERLAP,

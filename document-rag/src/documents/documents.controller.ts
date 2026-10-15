@@ -36,7 +36,7 @@ export class DocumentsController {
       new ParseFilePipe({
         validators: [
           new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB limit
-          new FileTypeValidator({ fileType: 'application/pdf' }),   // PDF only
+          new FileTypeValidator({ fileType: 'application/pdf' }), // PDF only
         ],
       }),
     )

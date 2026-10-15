@@ -392,3 +392,47 @@ button {
 }
 .dot:nth-child(1) { animation-delay: -0.32s; }
 .dot:nth-child(2) { animation-delay: -0.16s; }
+
+/* ── Streaming Elements ────────────────────────────────────── */
+.stream-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.stream-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent-secondary);
+  animation: pulse 0.8s infinite;
+}
+
+.source-score {
+  margin-left: 6px;
+  padding: 1px 5px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: var(--radius-pill);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-secondary);
+}
+
+.search-mode-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border-radius: var(--radius-pill);
+  background: #EEF2FF;
+  color: #4F46E5;
+  font-weight: 600;
+}

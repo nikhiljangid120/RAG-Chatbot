@@ -1,4 +1,11 @@
-import { Controller, Post, Body, HttpCode, HttpStatus, Res, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  HttpCode,
+  HttpStatus,
+  Res,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import { QaService } from './qa.service';
 import { AskQuestionDto } from './ask-question.dto';

@@ -17,9 +17,9 @@ import { RetrievalModule } from '../retrieval/retrieval.module';
  */
 @Module({
   imports: [
-    ConfigModule,      // Provides ConfigService → reads OPENROUTER_API_KEY from .env
-    EmbeddingsModule,  // Provides EmbeddingsService → embed the user's question
-    RetrievalModule,   // Provides RetrievalService → find relevant chunks
+    ConfigModule, // Provides ConfigService → reads OPENROUTER_API_KEY from .env
+    EmbeddingsModule, // Provides EmbeddingsService → embed the user's question
+    RetrievalModule, // Provides RetrievalService → find relevant chunks
   ],
   controllers: [QaController],
   providers: [QaService, PromptBuilderService],
